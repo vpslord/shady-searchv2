@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shady Search</title>
+<meta name="theme-color" content="#0A0F0E">
+<link rel="manifest" href="manifest.json">
+<!-- أيقونة مبنية بالكود (SVG) عشان الموقع يشتغل حتى من غير ما ترفع ملفات أيقونات -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230A0F0E'/%3E%3Ctext x='32' y='45' font-family='Arial' font-weight='900' font-size='34' fill='%2329E1B0' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230A0F0E'/%3E%3Ctext x='32' y='45' font-family='Arial' font-weight='900' font-size='34' fill='%2329E1B0' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shady Search">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ---- توكنز الألوان: دارك مود مع توهج نعناعي واحد كلمسة مميزة ---- */
+    --bg: #0A0F0E;
+    --bg-elev: #121917;
+    --bg-elev-2: #182420;
+    --line: rgba(255,255,255,0.07);
+    --line-strong: rgba(255,255,255,0.14);
+    --accent: #29E1B0;
+    --accent-soft: rgba(41,225,176,0.12);
+    --accent-glow: rgba(41,225,176,0.35);
+    --text: #EAF2F0;
+    --text-dim: #93A7A1;
+    --text-faint: #5D6E68;
+    --danger: #FF6B6B;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0;
+    font-family: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    direction: rtl;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  /* ===================== الشعار (بدون أي ملف صورة) ===================== */
+  .mark {
+    position: relative;
+    border-radius: 26%;
+    background: radial-gradient(circle at 30% 25%, #1B2825 0%, #0D1512 70%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .mark::before {
+    content: "S";
+    color: var(--accent);
+    font-weight: 900;
+    text-shadow: 0 0 18px var(--accent-glow);
+  }
+  .mark::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid var(--line-strong);
+  }
+  header .mark { width: 34px; height: 34px; }
+  header .mark::before { font-size: 16px; }
+  #loginScreen .mark { width: 84px; height: 84px; margin-bottom: 20px; animation: markIn 0.6s ease both; }
+  #loginScreen .mark::before { font-size: 38px; }
+  #splash .mark { width: 96px; height: 96px; margin-bottom: 22px; animation: markPulse 2.2s ease-in-out infinite; }
+  #splash .mark::before { font-size: 44px; }
+  @keyframes markIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes markPulse {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+    50% { box-shadow: 0 0 0 14px rgba(41,225,176,0); }
+  }
+
+  /* ===================== شاشة الدخول ===================== */
+  #loginScreen {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 15%, rgba(41,225,176,0.10) 0%, transparent 55%),
+      var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    padding: 24px;
+    text-align: center;
+  }
+  #loginScreen h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; color: var(--text); }
+  #loginScreen .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 28px; }
+  .login-box {
+    width: 100%;
+    max-width: 320px;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 22px;
+  }
+  .login-box input {
+    width: 100%;
+    padding: 13px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    font-size: 15px;
+    font-family: inherit;
+    margin-bottom: 12px;
+    background: var(--bg-elev-2);
+    color: var(--text);
+    text-align: center;
+  }
+  .login-box input::placeholder { color: var(--text-faint); }
+  .login-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .login-box button {
+    width: 100%;
+    padding: 13px;
+    border-radius: 12px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    background: var(--accent);
+    color: #05130F;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: filter 0.15s;
+  }
+  .login-box button:active { filter: brightness(0.9); transform: scale(0.99); }
+  #loginError {
+    color: var(--danger);
+    font-size: 13px;
+    margin-top: 12px;
+    min-height: 18px;
+  }
+
+  /* ===================== الهيدر ===================== */
+  header {
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--line);
+    color: var(--text);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header .title-wrap { display: flex; align-items: center; gap: 10px; }
+  header h1 {
+    font-size: 17px;
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+  }
+  header .title-sub {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 600;
+    margin-top: 1px;
+  }
+  .icon-btn {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .icon-btn:active { border-color: var(--accent); transform: scale(0.94); }
+
+  /* ===================== شبكة البينتو للتحكم ===================== */
+  .bento-controls {
+    padding: 14px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .bento-cell {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+  }
+  .search-cell { grid-column: 1 / -1; padding: 4px; }
+  .search-input-wrap { position: relative; }
+  #searchInput {
+    width: 100%;
+    padding: 14px 46px 14px 16px;
+    border-radius: 14px;
+    border: none;
+    font-size: 15px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text);
+  }
+  #searchInput::placeholder { color: var(--text-faint); }
+  #searchInput:focus { outline: none; }
+  .search-cell:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search-icon {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-faint);
+    display: flex;
+    pointer-events: none;
+  }
+  .area-cell { padding: 2px; position: relative; }
+  .area-combo { position: relative; }
+  #areaInput {
+    width: 100%;
+    padding: 12px 14px 12px 36px;
+    border-radius: 14px;
+    border: none;
+    font-size: 14px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text);
+  }
+  #areaInput::placeholder { color: var(--text-faint); }
+  #areaInput:focus { outline: none; }
+  .area-cell:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .area-chevron {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent);
+    pointer-events: none;
+    display: flex;
+  }
+  .area-clear {
+    position: absolute;
+    left: 34px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-faint);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: none;
+    padding: 2px;
+  }
+  .area-clear.show { display: flex; }
+  #areaDropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    left: 0;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 50;
+    display: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  #areaDropdown.show { display: block; }
+  .area-option {
+    padding: 11px 14px;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+    border-bottom: 1px solid var(--line);
+  }
+  .area-option:last-child { border-bottom: none; }
+  .area-option:hover, .area-option.highlighted {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .area-option.all-option {
+    color: var(--text-dim);
+    font-weight: 700;
+  }
+  .area-empty {
+    padding: 14px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .meta-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    font-weight: 600;
+    text-align: center;
+  }
+  #resultsMeta:empty::before { content: "جاهز للبحث"; color: var(--text-faint); }
+
+  /* ===================== النتائج ===================== */
+  #results {
+    padding: 2px 12px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 15px;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    flex-shrink: 0;
+    font-size: 15px;
+  }
+  .name {
+    font-weight: 700;
+    font-size: 15.5px;
+    flex: 1;
+    color: var(--text);
+  }
+  .area-chip {
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .phones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .phone-chip {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 20px;
+    padding: 8px 13px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-family: inherit;
+    direction: ltr;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .phone-chip:active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+    transform: scale(0.97);
+  }
+  .address-lines {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    line-height: 2;
+    color: var(--text-dim);
+  }
+  .address-lines b {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .empty-state, .loading-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 70px 24px;
+    font-size: 14px;
+  }
+  .empty-state svg { margin-bottom: 14px; opacity: 0.5; }
+
+  /* ===================== شاشة التحميل الأولى ===================== */
+  #splash {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(41,225,176,0.10) 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    text-align: center;
+    padding: 24px;
+  }
+  #splash .brand {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 34px;
+    font-weight: 600;
+  }
+  #splash .progress-track {
+    width: 230px;
+    height: 6px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  #splash .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+    width: 0%;
+    transition: width 0.2s;
+    border-radius: 6px;
+  }
+  #splash .progress-text {
+    margin-top: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  #splash .status-text {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .toast {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+    padding: 11px 22px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
+    z-index: 200;
+  }
+  .toast.show { opacity: 0.98; }
+
+  /* ===================== موبايل ضيق ===================== */
+  @media (max-width: 360px) {
+    .bento-controls { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" style="display:none;">
+  <div class="mark"></div>
+  <h2>Shady Search</h2>
+  <div class="sub">by Shady Yousry</div>
+  <div class="login-box">
+    <input type="text" id="loginUser" placeholder="اسم المستخدم" autocomplete="username">
+    <input type="password" id="loginPass" placeholder="كلمة المرور" autocomplete="current-password">
+    <button id="loginBtn">دخول</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+
+<div id="splash" style="display:none;">
+  <div class="mark"></div>
+  <div class="brand">by Shady Yousry</div>
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-text" id="progressText">0%</div>
+  <div class="status-text" id="statusText">بيتم تجهيز البيانات لأول مرة...</div>
+</div>
+
+<header>
+  <div class="title-wrap">
+    <div class="mark"></div>
+    <div>
+      <h1>Shady Search</h1>
+      <div class="title-sub" id="areaCountBadge"></div>
+    </div>
+  </div>
+  <button class="icon-btn" id="refreshBtn" title="إعادة تجهيز البيانات">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+  </button>
+</header>
+
+<div class="bento-controls">
+  <div class="bento-cell search-cell">
+    <div class="search-input-wrap">
+      <input type="text" id="searchInput" placeholder="دوّر بالاسم، التليفون، أو جزء من العنوان...">
+      <span class="search-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </span>
+    </div>
+  </div>
+  <div class="bento-cell area-cell">
+    <div class="area-combo">
+      <input type="text" id="areaInput" placeholder="كل المناطق" autocomplete="off">
+      <button class="area-clear" id="areaClear" title="مسح">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+      <span class="area-chevron">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+      </span>
+      <div id="areaDropdown"></div>
+    </div>
+  </div>
+  <div class="bento-cell meta-cell" id="resultsMeta"></div>
+</div>
+
+<div id="results">
+  <div class="empty-state">اكتب اسم أو تليفون أو اختار منطقة عشان تبدأ البحث</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
