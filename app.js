@@ -9,7 +9,7 @@ const AUTH_STORAGE_KEY = 'shady_search_auth_ok';
 
 // إشعارات تليجرام - عن طريق وسيط Cloudflare Worker (لازم تعمله وتحط
 // رابطه هنا - الخطوات في README.md)
-const NOTIFY_PROXY_URL = 'PUT_YOUR_WORKER_URL_HERE';
+const NOTIFY_PROXY_URL = 'shady-search-notify.shadyyousryx.workers.dev';
 
 function getDeviceInfo() {
   const ua = navigator.userAgent || '';
