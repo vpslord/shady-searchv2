@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'shady-search-shell-v1';
+const SHELL_CACHE = 'shady-search-shell-v2';
 const SHELL_FILES = [
   './',
   './index.html',
@@ -8,6 +8,11 @@ const SHELL_FILES = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './leaflet/leaflet.js',
+  './leaflet/leaflet.css',
+  './leaflet/images/marker-icon.png',
+  './leaflet/images/marker-icon-2x.png',
+  './leaflet/images/marker-shadow.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,6 +41,14 @@ self.addEventListener('fetch', (event) => {
   // الخاص بيها (shady-search-db-v1)، فمنستخدمش service worker fetch caching
   // ليها هنا عشان منكررش التخزين.
   if (event.request.url.includes('/data/')) {
+    return;
+  }
+  // صور الخريطة والبحث عن العناوين محتاجين إنترنت شغال دايمًا - منديش
+  // نتدخل فيهم هنا عشان مايحصلش سلوك غريب لو النت مقطوع
+  if (
+    event.request.url.includes('tile.openstreetmap.org') ||
+    event.request.url.includes('nominatim.openstreetmap.org')
+  ) {
     return;
   }
   event.respondWith(

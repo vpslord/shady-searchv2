@@ -9,7 +9,7 @@ const AUTH_STORAGE_KEY = 'shady_search_auth_ok';
 
 // إشعارات تليجرام - عن طريق وسيط Cloudflare Worker (لازم تعمله وتحط
 // رابطه هنا - الخطوات في README.md)
-const NOTIFY_PROXY_URL = 'shady-search-notify.shadyyousryx.workers.dev';
+const NOTIFY_PROXY_URL = 'PUT_YOUR_WORKER_URL_HERE';
 
 function getDeviceInfo() {
   const ua = navigator.userAgent || '';
@@ -43,6 +43,7 @@ const DB_CACHE_NAME = 'shady-search-db-v1';
 const DB_CACHE_KEY = '/customers.db.assembled';
 
 let allAreas = [];
+let lastRows = [];
 
 // -------------------- Web Worker لتشغيل SQLite بعيد عن الشاشة الرئيسية --------------------
 // ده اللي بيمنع تجمّد الشاشة وقت البحث، حتى لو البحث نفسه ياخد وقت.
@@ -311,11 +312,17 @@ function renderResults(rows) {
   }
 
   resultsMetaEl.textContent = `${rows.length} نتيجة`;
-  resultsEl.innerHTML = rows.map(rowToCardHtml).join('');
+  lastRows = rows;
+  resultsEl.innerHTML = rows.map((row, idx) => rowToCardHtml(row, idx)).join('');
 
   // اربط أحداث النسخ لكل رقم
   resultsEl.querySelectorAll('.phone-chip').forEach((btn) => {
     btn.addEventListener('click', () => copyPhone(btn.dataset.phone));
+  });
+
+  // اربط زرار الخريطة لكل كارت
+  resultsEl.querySelectorAll('.map-btn').forEach((btn) => {
+    btn.addEventListener('click', () => openMapModal(lastRows[Number(btn.dataset.idx)]));
   });
 }
 
@@ -325,7 +332,7 @@ function esc(str) {
   return div.innerHTML;
 }
 
-function rowToCardHtml(row) {
+function rowToCardHtml(row, idx) {
   const name = row.name || '';
   const area = row.area || '';
   const phones = [row.phone1, row.phone2, row.phone3].filter((p) => p && p.trim());
@@ -364,6 +371,11 @@ function rowToCardHtml(row) {
       </div>
       ${phonesHtml}
       ${addressHtml}
+      <div class="phones" style="margin-top:8px;">
+        <button class="map-btn" data-idx="${idx}">
+          🗺️ اعرض على الخريطة
+        </button>
+      </div>
     </div>
   `;
 }
@@ -383,6 +395,163 @@ function copyPhone(phone) {
       showToast(`اتنسخ الرقم: ${phone}`);
     });
 }
+
+// -------------------- الخريطة --------------------
+// خرائط مجانية بالكامل (Leaflet + OpenStreetMap)، مقفولة على حدود مصر
+// بس، وبتحاول تلاقي مكان العنوان فعليًا عن طريق بحث نصي (Geocoding).
+// مفيش عندنا إحداثيات GPS حقيقية للعملاء أصلاً، فالخريطة دي بتحاول
+// تدوّر على العنوان وقت ما تفتحها بس - محتاجة إنترنت عشان تشتغل.
+
+const EGYPT_BOUNDS = [
+  [21.5, 24.5], // جنوب غرب
+  [32.2, 37.0], // شمال شرق
+];
+const EGYPT_CENTER = [26.8, 30.8];
+
+let leafletMap = null;
+let leafletMarker = null;
+let geocodeCache = new Map();
+let lastGeocodeTime = 0;
+
+if (typeof L !== 'undefined') {
+  L.Icon.Default.prototype.options.imagePath = 'leaflet/images/';
+}
+
+function ensureMapInitialized() {
+  if (leafletMap) return leafletMap;
+
+  leafletMap = L.map('leafletMap', {
+    center: EGYPT_CENTER,
+    zoom: 6,
+    minZoom: 6,
+    maxBounds: EGYPT_BOUNDS,
+    maxBoundsViscosity: 1.0,
+    zoomControl: false,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap',
+  }).addTo(leafletMap);
+
+  L.control.zoom({ position: 'bottomleft' }).addTo(leafletMap);
+
+  return leafletMap;
+}
+
+function buildAddressQuery(row) {
+  const parts = [row.street, row.area].filter((v) => v && v.trim());
+  return parts.join('، ');
+}
+
+function buildFullAddressText(row) {
+  const parts = [
+    row.street,
+    row.description,
+    row.building ? `عقار ${row.building}` : '',
+    row.floor ? `دور ${row.floor}` : '',
+    row.apartment ? `شقة ${row.apartment}` : '',
+    row.area,
+  ].filter((v) => v && v.trim());
+  return parts.join('، ');
+}
+
+async function geocodeAddress(query) {
+  if (!query) return null;
+  if (geocodeCache.has(query)) return geocodeCache.get(query);
+  if (!NOTIFY_PROXY_URL || NOTIFY_PROXY_URL.includes('PUT_YOUR')) return null;
+
+  // احترام حد الاستخدام العادل لـ Nominatim (طلب واحد في الثانية تقريبًا)
+  const now = Date.now();
+  const wait = Math.max(0, 1100 - (now - lastGeocodeTime));
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastGeocodeTime = Date.now();
+
+  // بيمر عن طريق نفس الـ Worker بتاع إشعارات تليجرام، عشان يحل مشكلة
+  // إن Nominatim مش بيسمح للمتصفح يكلمه مباشرة
+  const url = `${NOTIFY_PROXY_URL}/geocode?q=${encodeURIComponent(query + '، مصر')}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const result = data && data[0] ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+    geocodeCache.set(query, result);
+    return result;
+  } catch (e) {
+    console.warn('geocode failed', e);
+    return null;
+  }
+}
+
+function setMapStatus(text, show) {
+  const el = document.getElementById('mapStatus');
+  el.textContent = text;
+  el.classList.toggle('show', !!show);
+}
+
+async function openMapModal(row) {
+  if (!row) return;
+  const modal = document.getElementById('mapModal');
+  modal.classList.add('show');
+
+  document.getElementById('mapHeaderName').textContent = row.name || 'موقع العميل';
+  document.getElementById('sheetName').textContent = row.name || '(بدون اسم)';
+  document.getElementById('sheetArea').textContent = row.area || '';
+
+  const phones = [row.phone1, row.phone2, row.phone3].filter((p) => p && p.trim());
+  document.getElementById('sheetPhones').innerHTML = phones
+    .map((p) => `<button class="phone-chip" data-phone="${esc(p)}">📞 ${esc(p)} 📋</button>`)
+    .join('');
+  document.getElementById('sheetPhones').querySelectorAll('.phone-chip').forEach((btn) => {
+    btn.addEventListener('click', () => copyPhone(btn.dataset.phone));
+  });
+
+  const fullAddress = buildFullAddressText(row);
+  document.getElementById('sheetAddress').textContent = fullAddress || 'مفيش تفاصيل عنوان مسجّلة';
+
+  const googleQuery = encodeURIComponent((fullAddress || row.area || '') + '، مصر');
+  document.getElementById('openGoogleMapsBtn').onclick = () => {
+    window.open(`https://www.google.com/maps/search/?api=1&query=${googleQuery}`, '_blank');
+  };
+
+  const map = ensureMapInitialized();
+  setTimeout(() => map.invalidateSize(), 50);
+
+  if (!navigator.onLine) {
+    setMapStatus('محتاج إنترنت عشان الخريطة تشتغل - جرب افتحه في خرائط جوجل', true);
+    map.setView(EGYPT_CENTER, 6);
+    return;
+  }
+
+  setMapStatus('بيدوّر على مكان العنوان...', true);
+  if (leafletMarker) {
+    map.removeLayer(leafletMarker);
+    leafletMarker = null;
+  }
+
+  const query = buildAddressQuery(row);
+  const result = await geocodeAddress(query);
+
+  if (result) {
+    setMapStatus('', false);
+    map.setView([result.lat, result.lon], 16);
+    leafletMarker = L.marker([result.lat, result.lon]).addTo(map);
+    leafletMarker
+      .bindPopup(`<b>${esc(row.name || '')}</b><br>${esc(fullAddress)}`)
+      .openPopup();
+  } else {
+    setMapStatus('مقدرناش نلاقي المكان بالظبط على الخريطة - جرب "افتح في خرائط جوجل" تحت 👇', true);
+    map.setView(EGYPT_CENTER, 6);
+  }
+}
+
+function closeMapModal() {
+  document.getElementById('mapModal').classList.remove('show');
+}
+
+document.getElementById('mapCloseBtn').addEventListener('click', closeMapModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMapModal();
+});
 
 // -------------------- إعادة التجهيز --------------------
 
