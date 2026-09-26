@@ -319,11 +319,6 @@ function renderResults(rows) {
   resultsEl.querySelectorAll('.phone-chip').forEach((btn) => {
     btn.addEventListener('click', () => copyPhone(btn.dataset.phone));
   });
-
-  // اربط زرار الخريطة لكل كارت
-  resultsEl.querySelectorAll('.map-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openMapModal(lastRows[Number(btn.dataset.idx)]));
-  });
 }
 
 function esc(str) {
@@ -371,11 +366,6 @@ function rowToCardHtml(row, idx) {
       </div>
       ${phonesHtml}
       ${addressHtml}
-      <div class="phones" style="margin-top:8px;">
-        <button class="map-btn" data-idx="${idx}">
-          🗺️ اعرض على الخريطة
-        </button>
-      </div>
     </div>
   `;
 }
@@ -398,9 +388,10 @@ function copyPhone(phone) {
 
 // -------------------- الخريطة --------------------
 // خرائط مجانية بالكامل (Leaflet + OpenStreetMap)، مقفولة على حدود مصر
-// بس، وبتحاول تلاقي مكان العنوان فعليًا عن طريق بحث نصي (Geocoding).
-// مفيش عندنا إحداثيات GPS حقيقية للعملاء أصلاً، فالخريطة دي بتحاول
-// تدوّر على العنوان وقت ما تفتحها بس - محتاجة إنترنت عشان تشتغل.
+// بس. بتاخد كل نتائج البحث الحالية، تجمعها حسب العنوان (الشارع
+// والمنطقة)، وتحاول تلاقي كل مكان فعليًا على الخريطة (Geocoding) وتحط
+// دبوس له - كل دبوس ممكن يبقى فيه أكتر من عميل لو نفس العنوان. مفيش
+// عندنا إحداثيات GPS حقيقية أصلاً، فده بيحصل وقت الفتح - محتاج إنترنت.
 
 const EGYPT_BOUNDS = [
   [21.5, 24.5], // جنوب غرب
@@ -409,9 +400,10 @@ const EGYPT_BOUNDS = [
 const EGYPT_CENTER = [26.8, 30.8];
 
 let leafletMap = null;
-let leafletMarker = null;
+let markersLayer = null;
 let geocodeCache = new Map();
 let lastGeocodeTime = 0;
+let mapRequestToken = 0; // عشان لو المستخدم قفل وفتح تاني، نلغي الطلب القديم
 
 if (typeof L !== 'undefined') {
   L.Icon.Default.prototype.options.imagePath = 'leaflet/images/';
@@ -435,6 +427,7 @@ function ensureMapInitialized() {
   }).addTo(leafletMap);
 
   L.control.zoom({ position: 'bottomleft' }).addTo(leafletMap);
+  markersLayer = L.layerGroup().addTo(leafletMap);
 
   return leafletMap;
 }
@@ -488,67 +481,128 @@ function setMapStatus(text, show) {
   el.classList.toggle('show', !!show);
 }
 
-async function openMapModal(row) {
-  if (!row) return;
+window.copyPhoneFromPopup = function (phone) {
+  copyPhone(phone);
+};
+
+function buildGroupPopupHtml(groupRows) {
+  const addressTitle = esc(buildAddressQuery(groupRows[0]) || groupRows[0].area || 'عنوان');
+  const peopleHtml = groupRows
+    .map((row) => {
+      const phones = [row.phone1, row.phone2, row.phone3].filter((p) => p && p.trim());
+      const phonesHtml = phones
+        .map(
+          (p) =>
+            `<button onclick="copyPhoneFromPopup('${p.replace(/'/g, '')}')" style="background:var(--accent-soft);color:var(--accent);border:none;border-radius:14px;padding:4px 9px;font-size:12px;font-weight:700;margin-inline-end:4px;cursor:pointer;">📞 ${esc(p)}</button>`
+        )
+        .join('');
+      const extra = [
+        row.building ? `عقار ${row.building}` : '',
+        row.floor ? `دور ${row.floor}` : '',
+        row.apartment ? `شقة ${row.apartment}` : '',
+      ]
+        .filter(Boolean)
+        .join('، ');
+      return `
+        <div style="padding:6px 0; border-top:1px solid var(--line);">
+          <div style="font-weight:800;">${esc(row.name || '(بدون اسم)')}</div>
+          ${extra ? `<div style="font-size:11.5px; color:var(--text-dim);">${esc(extra)}</div>` : ''}
+          <div style="margin-top:4px;">${phonesHtml}</div>
+        </div>
+      `;
+    })
+    .join('');
+
+  return `
+    <div style="min-width:200px; max-width:240px;">
+      <div style="font-weight:800; margin-bottom:2px;">${addressTitle}</div>
+      <div style="max-height:220px; overflow-y:auto;">${peopleHtml}</div>
+    </div>
+  `;
+}
+
+function groupRowsByAddress(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = buildAddressQuery(row) || row.area || '(بدون عنوان)';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
+async function openAllResultsMap() {
+  if (!lastRows || lastRows.length === 0) {
+    showToast('دوّر الأول عشان تقدر تشوف النتائج على الخريطة');
+    return;
+  }
+
+  const myToken = ++mapRequestToken;
   const modal = document.getElementById('mapModal');
   modal.classList.add('show');
-
-  document.getElementById('mapHeaderName').textContent = row.name || 'موقع العميل';
-  document.getElementById('sheetName').textContent = row.name || '(بدون اسم)';
-  document.getElementById('sheetArea').textContent = row.area || '';
-
-  const phones = [row.phone1, row.phone2, row.phone3].filter((p) => p && p.trim());
-  document.getElementById('sheetPhones').innerHTML = phones
-    .map((p) => `<button class="phone-chip" data-phone="${esc(p)}">📞 ${esc(p)} 📋</button>`)
-    .join('');
-  document.getElementById('sheetPhones').querySelectorAll('.phone-chip').forEach((btn) => {
-    btn.addEventListener('click', () => copyPhone(btn.dataset.phone));
-  });
-
-  const fullAddress = buildFullAddressText(row);
-  document.getElementById('sheetAddress').textContent = fullAddress || 'مفيش تفاصيل عنوان مسجّلة';
-
-  const googleQuery = encodeURIComponent((fullAddress || row.area || '') + '، مصر');
-  document.getElementById('openGoogleMapsBtn').onclick = () => {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${googleQuery}`, '_blank');
-  };
+  document.getElementById('mapHeaderName').textContent = 'كل النتائج على الخريطة';
+  document.getElementById('sheetName').textContent = `${lastRows.length} نتيجة`;
+  document.getElementById('sheetArea').textContent = '';
 
   const map = ensureMapInitialized();
+  markersLayer.clearLayers();
   setTimeout(() => map.invalidateSize(), 50);
 
   if (!navigator.onLine) {
-    setMapStatus('محتاج إنترنت عشان الخريطة تشتغل - جرب افتحه في خرائط جوجل', true);
+    setMapStatus('محتاج إنترنت عشان الخريطة تشتغل', true);
     map.setView(EGYPT_CENTER, 6);
     return;
   }
 
-  setMapStatus('بيدوّر على مكان العنوان...', true);
-  if (leafletMarker) {
-    map.removeLayer(leafletMarker);
-    leafletMarker = null;
+  const groups = groupRowsByAddress(lastRows);
+  const groupEntries = Array.from(groups.entries());
+  const bounds = [];
+  let done = 0;
+  let placed = 0;
+
+  setMapStatus(`بيتحمّل المواقع... 0 من ${groupEntries.length}`, true);
+
+  for (const [key, groupRows] of groupEntries) {
+    if (myToken !== mapRequestToken) return; // المستخدم قفل الخريطة أو بحث تاني
+
+    const result = await geocodeAddress(key);
+    done++;
+
+    if (result) {
+      const marker = L.marker([result.lat, result.lon]);
+      marker.bindPopup(buildGroupPopupHtml(groupRows));
+      marker.addTo(markersLayer);
+      bounds.push([result.lat, result.lon]);
+      placed++;
+    }
+
+    if (myToken !== mapRequestToken) return;
+    setMapStatus(`بيتحمّل المواقع... ${done} من ${groupEntries.length}`, true);
+    document.getElementById('sheetArea').textContent = `${placed} موقع لقيناه لحد دلوقتي`;
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    }
   }
 
-  const query = buildAddressQuery(row);
-  const result = await geocodeAddress(query);
+  if (myToken !== mapRequestToken) return;
 
-  if (result) {
-    setMapStatus('', false);
-    map.setView([result.lat, result.lon], 16);
-    leafletMarker = L.marker([result.lat, result.lon]).addTo(map);
-    leafletMarker
-      .bindPopup(`<b>${esc(row.name || '')}</b><br>${esc(fullAddress)}`)
-      .openPopup();
-  } else {
-    setMapStatus('مقدرناش نلاقي المكان بالظبط على الخريطة - جرب "افتح في خرائط جوجل" تحت 👇', true);
+  if (placed === 0) {
+    setMapStatus('مقدرناش نلاقي أي حتة من العناوين دي على الخريطة', true);
     map.setView(EGYPT_CENTER, 6);
+  } else {
+    setMapStatus('', false);
   }
+  document.getElementById('sheetArea').textContent = `${placed} من ${groupEntries.length} موقع اتلاقوا`;
 }
 
 function closeMapModal() {
   document.getElementById('mapModal').classList.remove('show');
+  mapRequestToken++; // يلغي أي عملية تحميل شغالة
 }
 
 document.getElementById('mapCloseBtn').addEventListener('click', closeMapModal);
+document.getElementById('showAllMapBtn').addEventListener('click', openAllResultsMap);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeMapModal();
 });
